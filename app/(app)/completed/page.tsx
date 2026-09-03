@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   CourseHole,
   RoundPlayerInfo,
+  WolfDecision,
   fourTwoZeroHolePoints,
   holeRangeNumbers,
   matchplayRoundPoints,
@@ -340,7 +341,7 @@ function CompletedRoundCard({
   const supabase = useMemo(() => createClient(), []);
   const [holes, setHoles] = useState<CourseHole[] | null>(null);
   const [scores, setScores] = useState<Record<string, Record<number, number>>>({});
-  const [wolfDecisions, setWolfDecisions] = useState<Record<number, string | null>>({});
+  const [wolfDecisions, setWolfDecisions] = useState<Record<number, WolfDecision | undefined>>({});
   const [detailLoading, setDetailLoading] = useState(false);
 
   const holeNumbers = holeRangeNumbers(round.hole_start, round.hole_end);
@@ -372,13 +373,18 @@ function CompletedRoundCard({
     }
     setScores(map);
 
-    if (round.format === "wolf") {
+     if (round.format === "wolf") {
       const { data: decisionRows } = await supabase
         .from("wolf_decisions")
-        .select("hole_number, partner_golfer_id")
+        .select("hole_number, partner_golfer_id, decision_type")
         .eq("round_id", round.id);
-      const decisionMap: Record<number, string | null> = {};
-      for (const d of decisionRows ?? []) decisionMap[d.hole_number] = d.partner_golfer_id;
+      const decisionMap: Record<number, WolfDecision | undefined> = {};
+      for (const d of decisionRows ?? []) {
+        decisionMap[d.hole_number] = {
+          type: d.decision_type as WolfDecision["type"],
+          partnerId: d.partner_golfer_id,
+        };
+      }
       setWolfDecisions(decisionMap);
     }
 
@@ -505,8 +511,8 @@ function CompletedRoundCard({
                   const wolfName = wolfId ? round.players.find((p) => p.golfer_id === wolfId)?.name : null;
                   const decision = wolfDecisions[h.hole_number];
                   const partnerName =
-                    decision !== undefined && decision !== null
-                      ? round.players.find((p) => p.golfer_id === decision)?.name
+                    decision?.type === "team"
+                      ? round.players.find((p) => p.golfer_id === decision.partnerId)?.name
                       : null;
                   return (
                     <tr key={h.hole_number} className="border-t" style={{ borderColor: "var(--color-border)" }}>
@@ -517,9 +523,11 @@ function CompletedRoundCard({
                           {wolfName?.split(" ")[0]}
                           {decision === undefined
                             ? " (undecided)"
-                            : decision === null
-                            ? " — lone"
-                            : ` +${partnerName?.split(" ")[0]}`}
+                            : decision.type === "team"
+                            ? ` +${partnerName?.split(" ")[0]}`
+                            : decision.type === "blind"
+                            ? " — blind"
+                            : " — lone"}
                         </td>
                       )}
                       {round.players.map((p) => {

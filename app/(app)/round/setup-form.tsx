@@ -45,6 +45,7 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
 
   const requiredCount = REQUIRED_PLAYERS[format];
 
@@ -193,9 +194,49 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
 
       {/* Format */}
       <div>
-        <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-muted)" }}>
-          Game format
-        </label>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-xs font-medium" style={{ color: "var(--color-text-muted)" }}>
+            Game format
+          </label>
+          <button
+            type="button"
+            onClick={() => setShowInfo((s) => !s)}
+            className="flex items-center justify-center h-4 w-4 rounded-full text-[10px] font-bold"
+            style={{ background: "var(--color-fairway)", color: "white" }}
+            aria-label="How do these formats work?"
+          >
+            i
+          </button>
+        </div>
+
+        {showInfo && (
+          <div
+            className="mb-2 rounded-lg border p-3 text-xs space-y-3"
+            style={{ borderColor: "var(--color-border)", background: "var(--color-fairway-soft)", color: "var(--color-fairway)" }}
+          >
+            <div>
+              <p className="font-semibold">4-2-0</p>
+              <p>Three golfers. On every hole, best net score gets 4 points, second gets 2, worst gets 0. Ties
+                split the points for the ranks they occupy.</p>
+            </div>
+            <div>
+              <p className="font-semibold">Matchplay</p>
+              <p>Two golfers. Lower net score wins the hole for 1 point; a tie is worth 0. An optional cap limits
+                how far the leader can pull ahead.</p>
+            </div>
+            <div>
+              <p className="font-semibold">Wolf</p>
+              <p>Four golfers, tee order fixed at the start. One player is the Wolf each hole (rotating through
+                that order), and picks one of three moves:</p>
+              <ul className="list-disc list-inside mt-1 space-y-0.5">
+                <li><strong>Team</strong> — partners with one other golfer, 2v2 best net. Winning pair gets 1 point each; a tie scores nothing.</li>
+                <li><strong>Lone Wolf</strong> — plays alone against the other three after seeing their tee shots. Wolf gets 2 points for winning outright; anything else (loss or tie) gives the other three 1 point each.</li>
+                <li><strong>Blind Wolf</strong> — declares solo before anyone has hit, for higher risk. Wolf gets 3 points for winning outright; anything else gives the other three 1 point each.</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-2">
           {(["4-2-0", "matchplay", "wolf"] as const).map((f) => (
             <button
