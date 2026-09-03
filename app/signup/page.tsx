@@ -33,7 +33,8 @@ export default function SignupPage() {
             Check your email
           </h1>
           <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
-            We sent a confirmation link to {email}. Confirm it, then log in.
+            We sent a confirmation link to {email}. Confirm it, then log in. An admin will also need to approve
+            your account before you can start using the app.
           </p>
           <Link href="/login" className="inline-block mt-6 text-sm font-medium" style={{ color: "var(--color-fairway)" }}>
             Back to login

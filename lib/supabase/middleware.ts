@@ -31,6 +31,8 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isAuthPage = path === "/login" || path === "/signup";
+  const isPendingPage = path === "/pending";
+  const isAdminPage = path.startsWith("/admin");
 
   if (!user && !isAuthPage) {
     const url = request.nextUrl.clone();
@@ -42,6 +44,43 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/round";
     return NextResponse.redirect(url);
+  }
+
+  if (user) {
+    const isAdmin = user.email === process.env.ADMIN_EMAIL;
+
+    if (isAdminPage && !isAdmin) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/round";
+      return NextResponse.redirect(url);
+    }
+
+    if (isAdmin) {
+      if (isPendingPage) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/round";
+        return NextResponse.redirect(url);
+      }
+    } else if (!isAdminPage) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("status")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      const approved = profile?.status === "approved";
+
+      if (!approved && !isPendingPage) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/pending";
+        return NextResponse.redirect(url);
+      }
+      if (approved && isPendingPage) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/round";
+        return NextResponse.redirect(url);
+      }
+    }
   }
 
   return supabaseResponse;
