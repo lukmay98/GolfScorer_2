@@ -260,7 +260,7 @@ export default function CompletedPage() {
         </div>
 
         {/* Date range */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-2">
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-text-muted)" }}>
               From
