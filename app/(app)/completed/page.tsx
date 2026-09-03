@@ -152,7 +152,7 @@ export default function CompletedPage() {
     <div className="mx-auto max-w-lg px-4 py-5 space-y-5">
       <div>
         <h1 className="font-display text-xl font-bold" style={{ color: "var(--color-fairway)" }}>
-          Completed
+          Completed Rounds
         </h1>
         <p className="text-sm mt-0.5" style={{ color: "var(--color-text-muted)" }}>
           {filtered.length} of {rounds.length} round{rounds.length === 1 ? "" : "s"}
@@ -269,8 +269,8 @@ export default function CompletedPage() {
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="w-full rounded-lg border px-2.5 py-1.5 text-sm outline-none"
-              style={{ borderColor: "var(--color-border)" }}
+              className="block w-full min-w-0 rounded-lg border px-2.5 py-1.5 text-sm outline-none"
+              style={{ borderColor: "var(--color-border)", maxWidth: "100%" }}
             />
           </div>
           <div>
@@ -281,8 +281,8 @@ export default function CompletedPage() {
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="w-full rounded-lg border px-2.5 py-1.5 text-sm outline-none"
-              style={{ borderColor: "var(--color-border)" }}
+              className="block w-full min-w-0 rounded-lg border px-2.5 py-1.5 text-sm outline-none"
+              style={{ borderColor: "var(--color-border)", maxWidth: "100%" }}
             />
           </div>
         </div>
