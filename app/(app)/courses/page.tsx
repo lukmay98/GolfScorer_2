@@ -73,6 +73,28 @@ export default function CoursesPage() {
     );
   }
 
+  async function resizeImage(file: File, maxDimension = 1600, quality = 0.85): Promise<Blob> {
+    const bitmap = await createImageBitmap(file);
+    let { width, height } = bitmap;
+    if (width > maxDimension || height > maxDimension) {
+      const scale = maxDimension / Math.max(width, height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    ctx?.drawImage(bitmap, 0, 0, width, height);
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error("Could not process image."))),
+        "image/jpeg",
+        quality
+      );
+    });
+  }
+
   async function handlePhotoUpload(file: File) {
     setExtracting(true);
     setExtractError(null);
@@ -80,8 +102,9 @@ export default function CoursesPage() {
     setShowForm(true);
 
     try {
+      const resizedBlob = await resizeImage(file);
       const formData = new FormData();
-      formData.append("image", file);
+      formData.append("image", resizedBlob, "scorecard.jpg");
       const res = await fetch("/api/extract-scorecard", { method: "POST", body: formData });
       const data = await res.json();
 
