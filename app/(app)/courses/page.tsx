@@ -30,6 +30,10 @@ export default function CoursesPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
+  const [extractNote, setExtractNote] = useState<string | null>(null);
+
   const totalPar = holes.reduce((sum, h) => sum + (Number(h.par) || 0), 0);
 
   async function loadCourses() {
@@ -67,6 +71,46 @@ export default function CoursesPage() {
     setHoles((prev) =>
       prev.map((h, i) => (i === index ? { ...h, [field]: value } : h))
     );
+  }
+
+  async function handlePhotoUpload(file: File) {
+    setExtracting(true);
+    setExtractError(null);
+    setExtractNote(null);
+    setShowForm(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+      const res = await fetch("/api/extract-scorecard", { method: "POST", body: formData });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setExtractError(data.error ?? "Couldn't read that scorecard. Try a clearer photo.");
+        return;
+      }
+
+      if (!courseName.trim() && data.suggested_course_name) {
+        setCourseName(data.suggested_course_name);
+      }
+
+      const extractedHoles: Hole[] = BLANK_HOLES.map((blank) => {
+        const match = (data.holes as { hole_number: number; par: number; handicap_index: number }[]).find(
+          (h) => h.hole_number === blank.hole_number
+        );
+        return match
+          ? { hole_number: blank.hole_number, par: String(match.par), handicap_index: String(match.handicap_index) }
+          : blank;
+      });
+      setHoles(extractedHoles);
+      setExtractNote(
+        `Extracted using the "${data.tee_set_used}" tee set — please double check the numbers below before saving.`
+      );
+    } catch {
+      setExtractError("Something went wrong reading that image. Try again.");
+    } finally {
+      setExtracting(false);
+    }
   }
 
   function isDuplicateCourseName(candidate: string) {
@@ -203,6 +247,34 @@ export default function CoursesPage() {
           className="rounded-xl border p-4 space-y-3"
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
         >
+          <label
+            className="flex items-center justify-center gap-2 rounded-lg border border-dashed px-3 py-3 text-sm font-medium cursor-pointer"
+            style={{ borderColor: "var(--color-fairway)", color: "var(--color-fairway)" }}
+          >
+            {extracting ? "Reading scorecard…" : "📷 Upload a scorecard photo to auto-fill"}
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              disabled={extracting}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handlePhotoUpload(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {extractError && (
+            <p className="text-xs rounded-lg px-3 py-2" style={{ background: "var(--color-flag-soft)", color: "var(--color-flag)" }}>
+              {extractError}
+            </p>
+          )}
+          {extractNote && !extractError && (
+            <p className="text-xs rounded-lg px-3 py-2" style={{ background: "var(--color-fairway-soft)", color: "var(--color-fairway)" }}>
+              {extractNote}
+            </p>
+          )}
+
           <input
             value={courseName}
             onChange={(e) => setCourseName(e.target.value)}
