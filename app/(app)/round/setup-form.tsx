@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 type Golfer = { id: string; name: string; handicap: number };
 type Course = { id: string; name: string };
 
-const REQUIRED_PLAYERS: Record<string, number> = { "4-2-0": 3, matchplay: 2 };
+const REQUIRED_PLAYERS: Record<string, number> = { "4-2-0": 3, matchplay: 2, wolf: 4 };
 
 export default function RoundSetupForm({ onCreated }: { onCreated: () => void }) {
   const supabase = useMemo(() => createClient(), []);
@@ -30,7 +30,7 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [format, setFormat] = useState<"4-2-0" | "matchplay">("4-2-0");
+  const [format, setFormat] = useState<"4-2-0" | "matchplay" | "wolf">("4-2-0");
   const [holeRange, setHoleRange] = useState<"front9" | "back9" | "full18">("full18");
   const [allowance, setAllowance] = useState("100");
   const [cap, setCap] = useState("");
@@ -103,10 +103,10 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
     setSelectedPlayers((prev) => prev.filter((p) => p.id !== id));
   }
 
-  function handleFormatChange(f: "4-2-0" | "matchplay") {
+  function handleFormatChange(f: "4-2-0" | "matchplay" | "wolf") {
     setFormat(f);
     setSelectedPlayers([]);
-    if (f === "4-2-0") setCap("");
+    if (f !== "matchplay") setCap("");
   }
 
   async function handleStart(e: React.FormEvent) {
@@ -118,7 +118,8 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
       return;
     }
     if (selectedPlayers.length !== requiredCount) {
-      setError(`${format === "4-2-0" ? "4-2-0" : "Matchplay"} needs exactly ${requiredCount} golfers.`);
+      const label = format === "4-2-0" ? "4-2-0" : format === "matchplay" ? "Matchplay" : "Wolf";
+      setError(`${label} needs exactly ${requiredCount} golfers.`);
       return;
     }
     const allowanceNum = Number(allowance);
@@ -195,8 +196,8 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-muted)" }}>
           Game format
         </label>
-        <div className="grid grid-cols-2 gap-2">
-          {(["4-2-0", "matchplay"] as const).map((f) => (
+        <div className="grid grid-cols-1 gap-2">
+          {(["4-2-0", "matchplay", "wolf"] as const).map((f) => (
             <button
               key={f}
               type="button"
@@ -208,10 +209,16 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
                 color: format === f ? "var(--color-fairway)" : "var(--color-text)",
               }}
             >
-              {f === "4-2-0" ? "4-2-0 (3 golfers)" : "Matchplay (2 golfers)"}
+              {f === "4-2-0" ? "4-2-0 (3 golfers)" : f === "matchplay" ? "Matchplay (2 golfers)" : "Wolf (4 golfers)"}
             </button>
           ))}
         </div>
+        {format === "wolf" && (
+          <p className="mt-1.5 text-xs" style={{ color: "var(--color-text-muted)" }}>
+            The order you add players below sets the tee order — the Wolf rotates through that order, one player
+            per hole, for the whole round.
+          </p>
+        )}
       </div>
 
       {/* Course */}

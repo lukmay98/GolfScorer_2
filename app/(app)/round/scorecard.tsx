@@ -9,16 +9,24 @@ import {
   holeRangeNumbers,
   matchplayRoundPoints,
   strokesForRound,
+  wolfForHole,
+  wolfRoundPoints,
 } from "@/lib/scoring";
 
 type RoundRow = {
   id: string;
-  format: "4-2-0" | "matchplay";
+  format: "4-2-0" | "matchplay" | "wolf";
   hole_start: number;
   hole_end: number;
   handicap_allowance: number;
   matchplay_cap: number | null;
   course_id: string;
+};
+
+const FORMAT_LABEL: Record<RoundRow["format"], string> = {
+  "4-2-0": "4-2-0",
+  matchplay: "Matchplay",
+  wolf: "Wolf",
 };
 
 export default function ActiveRoundCard({
@@ -37,6 +45,8 @@ export default function ActiveRoundCard({
   // scores[golfer_id][hole_number] = gross
   const [scores, setScores] = useState<Record<string, Record<number, number>>>({});
   const [inputs, setInputs] = useState<Record<string, Record<number, string>>>({});
+  // wolfDecisions[hole_number] = partner golfer_id, or null for Lone Wolf, undefined = not decided
+  const [wolfDecisions, setWolfDecisions] = useState<Record<number, string | null>>({});
   const [loading, setLoading] = useState(true);
   const [currentHole, setCurrentHole] = useState<number | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -96,6 +106,17 @@ export default function ActiveRoundCard({
     }
     setScores(scoreMap);
     setInputs(inputMap);
+
+    if (r.format === "wolf") {
+      const { data: decisionRows } = await supabase
+        .from("wolf_decisions")
+        .select("hole_number, partner_golfer_id")
+        .eq("round_id", roundId);
+      const decisionMap: Record<number, string | null> = {};
+      for (const d of decisionRows ?? []) decisionMap[d.hole_number] = d.partner_golfer_id;
+      setWolfDecisions(decisionMap);
+    }
+
     setLoading(false);
   }
 
@@ -106,6 +127,7 @@ export default function ActiveRoundCard({
 
   const holeNumbers = round ? holeRangeNumbers(round.hole_start, round.hole_end) : [];
   const strokes = round && players.length > 0 ? strokesForRound(players, round.handicap_allowance, holes) : {};
+  const playerIdsInTeeOrder = players.map((p) => p.golfer_id);
 
   const netByGolfer = useMemo(() => {
     const result: Record<string, Record<number, number>> = {};
@@ -123,7 +145,7 @@ export default function ActiveRoundCard({
   }, [scores, players, holes, round?.handicap_allowance]);
 
   const pointsResult = useMemo(() => {
-    if (!round) return { totals: {} as Record<string, number>, perHole: {} as Record<number, Record<string, number> | { pointsA: number; pointsB: number; capped: string | null }> };
+    if (!round) return { totals: {} as Record<string, number>, perHole: {} as Record<number, Record<string, number>> };
 
     if (round.format === "4-2-0") {
       const totals: Record<string, number> = {};
@@ -139,19 +161,28 @@ export default function ActiveRoundCard({
         for (const gid of Object.keys(holePoints)) totals[gid] += holePoints[gid];
       }
       return { totals, perHole };
-    } else {
+    } else if (round.format === "matchplay") {
       const [a, b] = players.map((p) => p.golfer_id) as [string, string];
       if (!a || !b) return { totals: {}, perHole: {} };
       const { totals, perHole } = matchplayRoundPoints(holeNumbers, netByGolfer, [a, b], round.matchplay_cap);
+      const perHoleGeneric: Record<number, Record<string, number>> = {};
+      for (const [h, v] of Object.entries(perHole)) {
+        perHoleGeneric[Number(h)] = { [a]: v.pointsA, [b]: v.pointsB };
+      }
+      return { totals, perHole: perHoleGeneric };
+    } else {
+      const { totals, perHole } = wolfRoundPoints(holeNumbers, playerIdsInTeeOrder, wolfDecisions, netByGolfer);
       return { totals, perHole };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [netByGolfer, players, holeNumbers, round?.format, round?.matchplay_cap]);
+  }, [netByGolfer, players, holeNumbers, round?.format, round?.matchplay_cap, wolfDecisions]);
 
   const requiredCount = players.length;
   const allScored = holeNumbers.every((h) =>
     players.every((p) => scores[p.golfer_id]?.[h] !== undefined)
   );
+  const allWolfDecided = holeNumbers.every((h) => wolfDecisions[h] !== undefined);
+  const canFinish = round?.format === "wolf" ? allScored && allWolfDecided : allScored;
 
   async function saveScore(golferId: string, hole: number, value: string) {
     setInputs((prev) => ({ ...prev, [golferId]: { ...prev[golferId], [hole]: value } }));
@@ -173,6 +204,29 @@ export default function ActiveRoundCard({
       return;
     }
     setScores((prev) => ({ ...prev, [golferId]: { ...prev[golferId], [hole]: gross } }));
+  }
+
+  async function setWolfDecision(hole: number, partnerId: string | null) {
+    setSaveError(null);
+    const { error } = await supabase
+      .from("wolf_decisions")
+      .upsert(
+        { round_id: roundId, hole_number: hole, partner_golfer_id: partnerId },
+        { onConflict: "round_id,hole_number" }
+      );
+    if (error) {
+      setSaveError(error.message);
+      return;
+    }
+    setWolfDecisions((prev) => ({ ...prev, [hole]: partnerId }));
+  }
+
+  function clearWolfDecisionUI(hole: number) {
+    setWolfDecisions((prev) => {
+      const next = { ...prev };
+      delete next[hole];
+      return next;
+    });
   }
 
   async function handlePause() {
@@ -203,13 +257,19 @@ export default function ActiveRoundCard({
     (a, b) => (pointsResult.totals[b.golfer_id] ?? 0) - (pointsResult.totals[a.golfer_id] ?? 0)
   );
 
+  const currentWolfId =
+    round.format === "wolf" && holeIndex >= 0 ? wolfForHole(playerIdsInTeeOrder, holeIndex) : null;
+  const currentWolf = currentWolfId ? players.find((p) => p.golfer_id === currentWolfId) : null;
+  const currentDecision = currentHole !== null ? wolfDecisions[currentHole] : undefined;
+  const currentDecisionMade = currentHole !== null && currentDecision !== undefined;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between px-1">
         <div>
           <p className="text-sm font-semibold">{courseName}</p>
           <p className="text-xs tabular" style={{ color: "var(--color-text-muted)" }}>
-            {round.format === "4-2-0" ? "4-2-0" : "Matchplay"} · Hcp {round.handicap_allowance}%
+            {FORMAT_LABEL[round.format]} · Hcp {round.handicap_allowance}%
             {round.matchplay_cap ? ` · Cap ${round.matchplay_cap}` : ""}
           </p>
         </div>
@@ -280,6 +340,62 @@ export default function ActiveRoundCard({
           </button>
         </div>
 
+        {/* Wolf decision — shown first so it's clear what to do before/while scoring this hole */}
+        {round.format === "wolf" && currentWolf && currentHole !== null && (
+          <div
+            className="mb-3 rounded-lg border p-3"
+            style={{ borderColor: "var(--color-fairway)", background: "var(--color-fairway-soft)" }}
+          >
+            {!currentDecisionMade ? (
+              <>
+                <p className="text-sm font-semibold" style={{ color: "var(--color-fairway)" }}>
+                  🐺 {currentWolf.name} is the Wolf this hole
+                </p>
+                <p className="text-xs mt-0.5 mb-2" style={{ color: "var(--color-fairway)" }}>
+                  Pick a partner (decided at the tee, before scores are known), or go Lone Wolf.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {players
+                    .filter((p) => p.golfer_id !== currentWolfId)
+                    .map((p) => (
+                      <button
+                        key={p.golfer_id}
+                        onClick={() => setWolfDecision(currentHole, p.golfer_id)}
+                        className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white"
+                        style={{ background: "var(--color-fairway)" }}
+                      >
+                        Partner: {p.name}
+                      </button>
+                    ))}
+                  <button
+                    onClick={() => setWolfDecision(currentHole, null)}
+                    className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+                    style={{ background: "var(--color-surface)", color: "var(--color-fairway)" }}
+                  >
+                    Go Lone Wolf
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-between">
+                <p className="text-sm" style={{ color: "var(--color-fairway)" }}>
+                  🐺 <strong>{currentWolf.name}</strong>{" "}
+                  {currentDecision
+                    ? <>partnered with <strong>{players.find((p) => p.golfer_id === currentDecision)?.name}</strong></>
+                    : <>is playing <strong>Lone Wolf</strong></>}
+                </p>
+                <button
+                  onClick={() => clearWolfDecisionUI(currentHole)}
+                  className="text-xs font-medium"
+                  style={{ color: "var(--color-fairway)" }}
+                >
+                  Change
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="space-y-2">
           {players.map((p) => {
             const strokeCount = currentHole ? strokes[p.golfer_id]?.[currentHole] ?? 0 : 0;
@@ -318,7 +434,7 @@ export default function ActiveRoundCard({
       </div>
 
       <div>
-        {allScored ? (
+        {canFinish ? (
           <button
             onClick={handleFinish}
             disabled={busy}
@@ -329,8 +445,11 @@ export default function ActiveRoundCard({
           </button>
         ) : (
           <p className="text-center text-xs" style={{ color: "var(--color-text-muted)" }}>
-            Enter every golfer&apos;s score on every hole to finish the round
-            ({holeNumbers.filter((h) => players.every((p) => scores[p.golfer_id]?.[h] !== undefined)).length}/{holeNumbers.length} holes complete for all {requiredCount} golfers)
+            {!allScored
+              ? <>Enter every golfer&apos;s score on every hole to finish the round
+                  ({holeNumbers.filter((h) => players.every((p) => scores[p.golfer_id]?.[h] !== undefined)).length}/{holeNumbers.length} holes complete for all {requiredCount} golfers)</>
+              : <>Decide the Wolf&apos;s partner (or Lone Wolf) on every hole to finish the round
+                  ({holeNumbers.filter((h) => wolfDecisions[h] !== undefined).length}/{holeNumbers.length} holes decided)</>}
           </p>
         )}
       </div>

@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 
 type OnHoldRound = {
   id: string;
-  format: "4-2-0" | "matchplay";
+  format: "4-2-0" | "matchplay" | "wolf";
   handicap_allowance: number;
   matchplay_cap: number | null;
   course_name: string;
@@ -143,7 +143,7 @@ export default function OnHoldList({ onResumed }: { onResumed: () => void }) {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-medium">
-                {r.course_name} <span style={{ color: "var(--color-text-muted)" }}>· {r.format === "4-2-0" ? "4-2-0" : "Matchplay"}</span>
+                                {r.course_name} <span style={{ color: "var(--color-text-muted)" }}>· {r.format === "4-2-0" ? "4-2-0" : r.format === "matchplay" ? "Matchplay" : "Wolf"}</span>
               </p>
               <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
                 {r.players.join(", ")}
