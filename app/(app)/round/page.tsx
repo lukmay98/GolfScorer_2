@@ -12,10 +12,16 @@ export default function RoundPage() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   async function checkActive() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
     const { data } = await supabase
       .from("rounds")
       .select("id")
       .eq("status", "active")
+      .eq("created_by", user.id)
       .maybeSingle();
     setActiveRoundId(data?.id ?? null);
   }

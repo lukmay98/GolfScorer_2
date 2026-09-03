@@ -48,13 +48,21 @@ export default function CompletedPage() {
 
   async function load() {
     setLoading(true);
-    const { data: raw } = await supabase
+
+    const meRes = await fetch("/api/me");
+    const me = meRes.ok ? await meRes.json() : { isAdmin: false, userId: null };
+
+    let query = supabase
       .from("rounds")
       .select(
         "id, format, hole_start, hole_end, handicap_allowance, matchplay_cap, course_id, completed_at, courses(name)"
       )
       .eq("status", "completed")
       .order("completed_at", { ascending: false });
+    if (!me.isAdmin) {
+      query = query.eq("created_by", me.userId);
+    }
+    const { data: raw } = await query;
 
     if (!raw) {
       setRounds([]);
@@ -90,6 +98,7 @@ export default function CompletedPage() {
         };
       })
     );
+
     setRounds(enriched);
     setLoading(false);
   }

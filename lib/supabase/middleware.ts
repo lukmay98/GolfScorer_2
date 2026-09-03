@@ -31,10 +31,11 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isAuthPage = path === "/login" || path === "/signup";
+  const isPublicPage = isAuthPage || path === "/contact";
   const isPendingPage = path === "/pending";
   const isAdminPage = path.startsWith("/admin");
 
-  if (!user && !isAuthPage) {
+  if (!user && !isPublicPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

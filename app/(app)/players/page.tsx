@@ -24,9 +24,26 @@ export default function PlayersPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  const [userId, setUserId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+
   async function loadGolfers() {
     setLoading(true);
-    const { data } = await supabase.from("golfers").select("*").order("name");
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    setUserId(user?.id ?? null);
+
+    const meRes = await fetch("/api/me");
+    const me = meRes.ok ? await meRes.json() : { isAdmin: false };
+    setIsAdmin(me.isAdmin);
+
+    let query = supabase.from("golfers").select("*").order("name");
+    if (!me.isAdmin && user) {
+      query = query.eq("created_by", user.id);
+    }
+    const { data } = await query;
     setGolfers(data ?? []);
     setLoading(false);
   }
@@ -70,7 +87,7 @@ export default function PlayersPage() {
     setSaving(true);
     const { error } = await supabase
       .from("golfers")
-      .insert({ name: trimmedName, handicap: hcp });
+      .insert({ name: trimmedName, handicap: hcp, created_by: userId });
     setSaving(false);
 
     if (error) {
@@ -161,7 +178,7 @@ export default function PlayersPage() {
           Players
         </h1>
         <p className="text-sm mt-0.5" style={{ color: "var(--color-text-muted)" }}>
-          {golfers.length} golfer{golfers.length === 1 ? "" : "s"} on the roster
+          {golfers.length} golfer{golfers.length === 1 ? "" : "s"} {isAdmin ? "(all users)" : "on your roster"}
         </p>
       </div>
 

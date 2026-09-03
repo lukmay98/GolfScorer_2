@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 type Golfer = { id: string; name: string; handicap: number };
@@ -10,6 +10,25 @@ const REQUIRED_PLAYERS: Record<string, number> = { "4-2-0": 3, matchplay: 2 };
 
 export default function RoundSetupForm({ onCreated }: { onCreated: () => void }) {
   const supabase = useMemo(() => createClient(), []);
+
+  const [userId, setUserId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    async function loadMe() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setUserId(user?.id ?? null);
+      const res = await fetch("/api/me");
+      if (res.ok) {
+        const data = await res.json();
+        setIsAdmin(data.isAdmin);
+      }
+    }
+    loadMe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [format, setFormat] = useState<"4-2-0" | "matchplay">("4-2-0");
   const [holeRange, setHoleRange] = useState<"front9" | "back9" | "full18">("full18");
@@ -64,11 +83,11 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
       setPlayerResults([]);
       return;
     }
-    const { data } = await supabase
-      .from("golfers")
-      .select("id, name, handicap")
-      .ilike("name", `%${q.trim()}%`)
-      .limit(8);
+    let query = supabase.from("golfers").select("id, name, handicap").ilike("name", `%${q.trim()}%`).limit(8);
+    if (!isAdmin && userId) {
+      query = query.eq("created_by", userId);
+    }
+    const { data } = await query;
     setPlayerResults(data ?? []);
   }
 
@@ -130,6 +149,7 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
         handicap_allowance: allowanceNum,
         matchplay_cap: capNum,
         status: "active",
+        created_by: userId,
       })
       .select()
       .single();
@@ -138,7 +158,7 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
       setSaving(false);
       setError(
         roundError?.code === "23505"
-          ? "A round is already active. Finish or pause it first."
+          ? "You already have an active round. Finish or pause it first."
           : roundError?.message ?? "Could not start round."
       );
       return;

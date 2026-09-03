@@ -24,11 +24,22 @@ export default function OnHoldList({ onResumed }: { onResumed: () => void }) {
 
   async function load() {
     setLoading(true);
-    const { data: rawRounds } = await supabase
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const meRes = await fetch("/api/me");
+    const me = meRes.ok ? await meRes.json() : { isAdmin: false };
+
+    let query = supabase
       .from("rounds")
       .select("id, format, handicap_allowance, matchplay_cap, hole_start, hole_end, course_id, courses(name)")
       .eq("status", "on_hold")
       .order("created_at", { ascending: false });
+    if (!me.isAdmin && user) {
+      query = query.eq("created_by", user.id);
+    }
+    const { data: rawRounds } = await query;
 
     if (!rawRounds) {
       setRounds([]);
@@ -92,7 +103,7 @@ export default function OnHoldList({ onResumed }: { onResumed: () => void }) {
     if (error) {
       setError(
         error.code === "23505"
-          ? "A round is already active. Finish or pause it first."
+          ? "You already have an active round. Finish or pause it first."
           : error.message
       );
       return;

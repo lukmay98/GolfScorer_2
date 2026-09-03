@@ -90,6 +90,11 @@ export default function LoginPage() {
             Create an account
           </Link>
         </p>
+        <p className="mt-2 text-center text-xs">
+          <Link href="/contact" className="font-medium" style={{ color: "var(--color-text-muted)" }}>
+            Contact & info
+          </Link>
+        </p>
       </div>
     </main>
   );
