@@ -11,6 +11,7 @@ import {
   matchplayRoundPoints,
   stablefordRoundTotals,
   strokesForRound,
+  strokesForRoundAbsolute,
   wolfForHole,
   wolfRoundPoints,
 } from "@/lib/scoring";
@@ -30,6 +31,10 @@ type CompletedRound = {
 
 type Golfer = { id: string; name: string };
 type Course = { id: string; name: string };
+
+function formatToPar(n: number): string {
+  return n > 0 ? `+${n}` : `${n}`;
+}
 
 export default function CompletedPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -393,6 +398,7 @@ function CompletedRoundCard({
   }
 
   const strokes = holes ? strokesForRound(round.players, round.handicap_allowance, holes) : {};
+  const absoluteStrokes = holes ? strokesForRoundAbsolute(round.players, round.handicap_allowance, holes) : {};
 
   const netByGolfer = useMemo(() => {
     const result: Record<string, Record<number, number>> = {};
@@ -402,6 +408,23 @@ function CompletedRoundCard({
         const gross = scores[p.golfer_id]?.[h];
         if (gross === undefined) continue;
         result[p.golfer_id][h] = gross - (strokes[p.golfer_id]?.[h] ?? 0);
+      }
+    }
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scores, holes]);
+
+  // Stableford scores each player against par, not against each other, so
+  // it needs each player's FULL handicap strokes rather than the
+  // relative-to-lowest-in-round strokes the other formats use.
+  const netByGolferAbsolute = useMemo(() => {
+    const result: Record<string, Record<number, number>> = {};
+    for (const p of round.players) {
+      result[p.golfer_id] = {};
+      for (const h of holeNumbers) {
+        const gross = scores[p.golfer_id]?.[h];
+        if (gross === undefined) continue;
+        result[p.golfer_id][h] = gross - (absoluteStrokes[p.golfer_id]?.[h] ?? 0);
       }
     }
     return result;
@@ -447,9 +470,9 @@ function CompletedRoundCard({
     const parByHole: Record<number, number> = {};
     for (const h of holes) parByHole[h.hole_number] = h.par;
     const playerIds = round.players.map((p) => p.golfer_id);
-    return stablefordRoundTotals(holeNumbers, playerIds, scores, netByGolfer, parByHole);
+    return stablefordRoundTotals(holeNumbers, playerIds, scores, netByGolferAbsolute, parByHole);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scores, netByGolfer, holes]);
+  }, [scores, netByGolferAbsolute, holes]);
 
   const sortedTotals = [...round.players].sort((a, b) => {
     if (round.format === "stableford" && stablefordResult) {
@@ -500,10 +523,10 @@ function CompletedRoundCard({
           {sortedTotals.map((p) =>
             round.format === "stableford" && stablefordResult ? (
               <span key={p.golfer_id} className="text-xs tabular">
-                {p.name}: <span className="font-semibold">{stablefordResult.netPoints[p.golfer_id] ?? 0} net</span> /{" "}
-                {stablefordResult.grossPoints[p.golfer_id] ?? 0} gross (
-                {(stablefordResult.toPar[p.golfer_id] ?? 0) > 0 ? "+" : ""}
-                {stablefordResult.toPar[p.golfer_id] ?? 0})
+                {p.name} (
+                {formatToPar(stablefordResult.toPar[p.golfer_id] ?? 0)}/
+                {stablefordResult.netPoints[p.golfer_id] ?? 0}/
+                {stablefordResult.grossPoints[p.golfer_id] ?? 0})
               </span>
             ) : (
               <span key={p.golfer_id} className="text-xs tabular">
@@ -522,7 +545,7 @@ function CompletedRoundCard({
             <>
               {round.format === "stableford" && (
                 <p className="text-xs mb-2" style={{ color: "var(--color-text-muted)" }}>
-                  Each cell shows gross score, then (net points / gross points).
+                  Each cell shows gross score, then (strokes to par / net points / gross points).
                 </p>
               )}
               <table className="w-full text-xs tabular">
@@ -579,7 +602,8 @@ function CompletedRoundCard({
                               {stablefordPts !== undefined ? (
                                 <span style={{ color: "var(--color-text-muted)" }}>
                                   {" "}
-                                  ({stablefordPts.netPoints}/{stablefordPts.grossPoints})
+                                  ({stablefordPts.toPar !== null ? formatToPar(stablefordPts.toPar) : "–"}/
+                                  {stablefordPts.netPoints}/{stablefordPts.grossPoints})
                                 </span>
                               ) : simplePts !== undefined ? (
                                 <span style={{ color: "var(--color-text-muted)" }}> ({simplePts})</span>
@@ -591,6 +615,22 @@ function CompletedRoundCard({
                     );
                   })}
                 </tbody>
+                {round.format === "stableford" && stablefordResult && (
+                  <tfoot>
+                    <tr className="border-t-2 font-semibold" style={{ borderColor: "var(--color-border)" }}>
+                      <td className="py-1.5" colSpan={2}>
+                        Total
+                      </td>
+                      {round.players.map((p) => (
+                        <td key={p.golfer_id} className="py-1.5 pl-2">
+                          {formatToPar(stablefordResult.toPar[p.golfer_id] ?? 0)}/
+                          {stablefordResult.netPoints[p.golfer_id] ?? 0}/
+                          {stablefordResult.grossPoints[p.golfer_id] ?? 0}
+                        </td>
+                      ))}
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </>
           )}
