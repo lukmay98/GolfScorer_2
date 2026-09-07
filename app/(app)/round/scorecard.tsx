@@ -33,6 +33,10 @@ const FORMAT_LABEL: Record<RoundRow["format"], string> = {
   stableford: "Stableford",
 };
 
+function formatToPar(n: number): string {
+  return n > 0 ? `+${n}` : `${n}`;
+}
+
 export default function ActiveRoundCard({
   roundId,
   onChanged,
@@ -512,6 +516,107 @@ export default function ActiveRoundCard({
             {saveError}
           </p>
         )}
+      </div>
+
+      {/* Full scorecard — updates live as scores are entered */}
+      <div
+        className="rounded-xl border p-4 overflow-x-auto"
+        style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+      >
+        <p className="text-xs font-semibold mb-2" style={{ color: "var(--color-text-muted)" }}>
+          Scorecard
+        </p>
+        {round.format === "stableford" && (
+          <p className="text-xs mb-2" style={{ color: "var(--color-text-muted)" }}>
+            Each cell shows gross score, then (strokes to par / net points / gross points).
+          </p>
+        )}
+        <table className="w-full text-xs tabular">
+          <thead>
+            <tr style={{ color: "var(--color-text-muted)" }}>
+              <th className="text-left font-semibold pb-1">Hole</th>
+              <th className="text-left font-semibold pb-1">Par</th>
+              {round.format === "wolf" && <th className="text-left font-semibold pb-1 pl-2">Wolf</th>}
+              {players.map((p) => (
+                <th key={p.golfer_id} className="text-left font-semibold pb-1 pl-2">
+                  {p.name.split(" ")[0]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {holes.map((h, idx) => {
+              const wolfId = round.format === "wolf" ? wolfForHole(playerIdsInTeeOrder, idx) : null;
+              const wolfName = wolfId ? players.find((p) => p.golfer_id === wolfId)?.name : null;
+              const decision = wolfDecisions[h.hole_number];
+              const partnerName =
+                decision?.type === "team" ? players.find((p) => p.golfer_id === decision.partnerId)?.name : null;
+              const isCurrent = h.hole_number === currentHole;
+              return (
+                <tr
+                  key={h.hole_number}
+                  className="border-t"
+                  style={{
+                    borderColor: "var(--color-border)",
+                    background: isCurrent ? "var(--color-fairway-soft)" : "transparent",
+                  }}
+                >
+                  <td className="py-1">{h.hole_number}</td>
+                  <td className="py-1">{h.par}</td>
+                  {round.format === "wolf" && (
+                    <td className="py-1 pl-2" style={{ color: "var(--color-text-muted)" }}>
+                      {wolfName?.split(" ")[0]}
+                      {decision === undefined
+                        ? " (undecided)"
+                        : decision.type === "team"
+                        ? ` +${partnerName?.split(" ")[0]}`
+                        : decision.type === "blind"
+                        ? " — blind"
+                        : " — lone"}
+                    </td>
+                  )}
+                  {players.map((p) => {
+                    const gross = scores[p.golfer_id]?.[h.hole_number];
+                    const stablefordPts =
+                      round.format === "stableford" ? stablefordResult?.perHole[h.hole_number]?.[p.golfer_id] : undefined;
+                    const simplePts =
+                      round.format !== "stableford" ? pointsResult.perHole[h.hole_number]?.[p.golfer_id] : undefined;
+                    return (
+                      <td key={p.golfer_id} className="py-1 pl-2">
+                        {gross ?? "–"}
+                        {stablefordPts !== undefined ? (
+                          <span style={{ color: "var(--color-text-muted)" }}>
+                            {" "}
+                            ({stablefordPts.toPar !== null ? formatToPar(stablefordPts.toPar) : "–"}/
+                            {stablefordPts.netPoints}/{stablefordPts.grossPoints})
+                          </span>
+                        ) : simplePts !== undefined ? (
+                          <span style={{ color: "var(--color-text-muted)" }}> ({simplePts})</span>
+                        ) : null}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+          {round.format === "stableford" && stablefordResult && (
+            <tfoot>
+              <tr className="border-t-2 font-semibold" style={{ borderColor: "var(--color-border)" }}>
+                <td className="py-1.5" colSpan={2}>
+                  Total
+                </td>
+                {players.map((p) => (
+                  <td key={p.golfer_id} className="py-1.5 pl-2">
+                    {formatToPar(stablefordResult.toPar[p.golfer_id] ?? 0)}/
+                    {stablefordResult.netPoints[p.golfer_id] ?? 0}/
+                    {stablefordResult.grossPoints[p.golfer_id] ?? 0}
+                  </td>
+                ))}
+              </tr>
+            </tfoot>
+          )}
+        </table>
       </div>
 
       <div>
