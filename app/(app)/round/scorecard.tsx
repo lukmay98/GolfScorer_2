@@ -11,6 +11,7 @@ import {
   matchplayRoundPoints,
   stablefordRoundTotals,
   strokesForRound,
+  strokesForRoundAbsolute,
   wolfForHole,
   wolfRoundPoints,
 } from "@/lib/scoring";
@@ -135,6 +136,8 @@ export default function ActiveRoundCard({
 
   const holeNumbers = round ? holeRangeNumbers(round.hole_start, round.hole_end) : [];
   const strokes = round && players.length > 0 ? strokesForRound(players, round.handicap_allowance, holes) : {};
+  const absoluteStrokes =
+    round && players.length > 0 ? strokesForRoundAbsolute(players, round.handicap_allowance, holes) : {};
   const playerIdsInTeeOrder = players.map((p) => p.golfer_id);
 
   const netByGolfer = useMemo(() => {
@@ -145,6 +148,24 @@ export default function ActiveRoundCard({
         const gross = scores[p.golfer_id]?.[h];
         if (gross === undefined) continue;
         const strokeCount = strokes[p.golfer_id]?.[h] ?? 0;
+        result[p.golfer_id][h] = gross - strokeCount;
+      }
+    }
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scores, players, holes, round?.handicap_allowance]);
+
+  // Stableford scores each player against a fixed target (par), not against
+  // each other, so it needs each player's FULL handicap strokes rather than
+  // the relative-to-lowest-in-round strokes the other formats use.
+  const netByGolferAbsolute = useMemo(() => {
+    const result: Record<string, Record<number, number>> = {};
+    for (const p of players) {
+      result[p.golfer_id] = {};
+      for (const h of holeNumbers) {
+        const gross = scores[p.golfer_id]?.[h];
+        if (gross === undefined) continue;
+        const strokeCount = absoluteStrokes[p.golfer_id]?.[h] ?? 0;
         result[p.golfer_id][h] = gross - strokeCount;
       }
     }
@@ -193,9 +214,9 @@ export default function ActiveRoundCard({
     if (!round || round.format !== "stableford") return null;
     const parByHole: Record<number, number> = {};
     for (const h of holes) parByHole[h.hole_number] = h.par;
-    return stablefordRoundTotals(holeNumbers, playerIdsInTeeOrder, scores, netByGolfer, parByHole);
+    return stablefordRoundTotals(holeNumbers, playerIdsInTeeOrder, scores, netByGolferAbsolute, parByHole);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scores, netByGolfer, holes, holeNumbers, round?.format]);
+  }, [scores, netByGolferAbsolute, holes, holeNumbers, round?.format]);
 
   const requiredCount = players.length;
   const allScored = holeNumbers.every((h) =>
@@ -450,12 +471,15 @@ export default function ActiveRoundCard({
 
         <div className="space-y-2">
           {players.map((p) => {
-            const strokeCount = currentHole ? strokes[p.golfer_id]?.[currentHole] ?? 0 : 0;
-            const net = currentHole ? netByGolfer[p.golfer_id]?.[currentHole] : undefined;
+            const isStableford = round.format === "stableford";
+            const strokeCount = currentHole
+              ? (isStableford ? absoluteStrokes : strokes)[p.golfer_id]?.[currentHole] ?? 0
+              : 0;
+            const net = currentHole
+              ? (isStableford ? netByGolferAbsolute : netByGolfer)[p.golfer_id]?.[currentHole]
+              : undefined;
             const holePoints =
-              round.format === "stableford" && currentHole !== null
-                ? stablefordResult?.perHole[currentHole]?.[p.golfer_id]
-                : undefined;
+              isStableford && currentHole !== null ? stablefordResult?.perHole[currentHole]?.[p.golfer_id] : undefined;
             return (
               <div
                 key={p.golfer_id}

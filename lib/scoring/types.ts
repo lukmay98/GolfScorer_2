@@ -50,6 +50,27 @@ export function strokesForRound(
   return result;
 }
 
+/**
+ * Strokes for every golfer using their FULL handicap (against scratch, not
+ * against the lowest handicap in the round). Head-to-head formats (4-2-0,
+ * Matchplay, Wolf) only ever compare players against each other, so using
+ * the lowest-in-round as the baseline gives the same relative result and
+ * is what strokesForRound does. Formats that score each player against a
+ * fixed target instead — like Stableford, scored against par — need this
+ * version, or a single-player round would always show 0 strokes.
+ */
+export function strokesForRoundAbsolute(
+  players: RoundPlayerInfo[],
+  allowancePct: number,
+  holes: CourseHole[]
+): Record<string, Record<number, number>> {
+  const result: Record<string, Record<number, number>> = {};
+  for (const p of players) {
+    result[p.golfer_id] = strokesPerHole(p.handicap_snapshot, 0, allowancePct, holes);
+  }
+  return result;
+}
+
 export function holeRangeNumbers(holeStart: number, holeEnd: number): number[] {
   const holes: number[] = [];
   for (let h = holeStart; h <= holeEnd; h++) holes.push(h);

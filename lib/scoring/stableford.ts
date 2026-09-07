@@ -6,6 +6,13 @@ export function stablefordHolePoints(strokesRelativeToPar: number): number {
   return Math.max(0, 2 - strokesRelativeToPar);
 }
 
+export type StablefordHoleResult = {
+  netPoints: number;
+  grossPoints: number;
+  /** Gross strokes relative to par for this hole, or null if not yet scored. */
+  toPar: number | null;
+};
+
 /**
  * Stableford totals across a round: net points, gross points, and a
  * running gross "strokes relative to par" tally, per player. Only holes
@@ -28,7 +35,7 @@ export function stablefordRoundTotals(
     toPar[id] = 0;
   }
 
-  const perHole: Record<number, Record<string, { netPoints: number; grossPoints: number }>> = {};
+  const perHole: Record<number, Record<string, StablefordHoleResult>> = {};
 
   for (const h of holeNumbers) {
     const par = parByHole[h];
@@ -38,12 +45,14 @@ export function stablefordRoundTotals(
     for (const id of playerIds) {
       const gross = grossByGolfer[id]?.[h];
       const net = netByGolfer[id]?.[h];
-      const holeResult = { netPoints: 0, grossPoints: 0 };
+      const holeResult: StablefordHoleResult = { netPoints: 0, grossPoints: 0, toPar: null };
 
       if (gross !== undefined) {
-        holeResult.grossPoints = stablefordHolePoints(gross - par);
+        const diff = gross - par;
+        holeResult.grossPoints = stablefordHolePoints(diff);
+        holeResult.toPar = diff;
         grossPoints[id] += holeResult.grossPoints;
-        toPar[id] += gross - par;
+        toPar[id] += diff;
       }
       if (net !== undefined) {
         holeResult.netPoints = stablefordHolePoints(net - par);
