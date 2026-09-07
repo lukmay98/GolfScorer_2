@@ -5,8 +5,14 @@ import { createClient } from "@/lib/supabase/client";
 
 type Golfer = { id: string; name: string; handicap: number };
 type Course = { id: string; name: string };
+type Format = "4-2-0" | "matchplay" | "wolf" | "stableford";
 
-const REQUIRED_PLAYERS: Record<string, number> = { "4-2-0": 3, matchplay: 2, wolf: 4 };
+const PLAYER_RANGE: Record<Format, { min: number; max: number }> = {
+  "4-2-0": { min: 3, max: 3 },
+  matchplay: { min: 2, max: 2 },
+  wolf: { min: 4, max: 4 },
+  stableford: { min: 1, max: 4 },
+};
 
 export default function RoundSetupForm({ onCreated }: { onCreated: () => void }) {
   const supabase = useMemo(() => createClient(), []);
@@ -30,7 +36,7 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [format, setFormat] = useState<"4-2-0" | "matchplay" | "wolf">("4-2-0");
+  const [format, setFormat] = useState<Format>("4-2-0");
   const [holeRange, setHoleRange] = useState<"front9" | "back9" | "full18">("full18");
   const [allowance, setAllowance] = useState("100");
   const [cap, setCap] = useState("");
@@ -47,7 +53,7 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
   const [saving, setSaving] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
 
-  const requiredCount = REQUIRED_PLAYERS[format];
+  const { min: minPlayers, max: maxPlayers } = PLAYER_RANGE[format];
 
   async function searchCourses(q: string) {
     setCourseQuery(q);
@@ -94,7 +100,7 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
 
   function addPlayer(g: Golfer) {
     if (selectedPlayers.some((p) => p.id === g.id)) return;
-    if (selectedPlayers.length >= requiredCount) return;
+    if (selectedPlayers.length >= maxPlayers) return;
     setSelectedPlayers((prev) => [...prev, g]);
     setPlayerQuery("");
     setPlayerResults([]);
@@ -104,11 +110,18 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
     setSelectedPlayers((prev) => prev.filter((p) => p.id !== id));
   }
 
-  function handleFormatChange(f: "4-2-0" | "matchplay" | "wolf") {
+  function handleFormatChange(f: Format) {
     setFormat(f);
     setSelectedPlayers([]);
     if (f !== "matchplay") setCap("");
   }
+
+  const FORMAT_LABEL: Record<Format, string> = {
+    "4-2-0": "4-2-0",
+    matchplay: "Matchplay",
+    wolf: "Wolf",
+    stableford: "Stableford",
+  };
 
   async function handleStart(e: React.FormEvent) {
     e.preventDefault();
@@ -118,9 +131,12 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
       setError("Choose a course.");
       return;
     }
-    if (selectedPlayers.length !== requiredCount) {
-      const label = format === "4-2-0" ? "4-2-0" : format === "matchplay" ? "Matchplay" : "Wolf";
-      setError(`${label} needs exactly ${requiredCount} golfers.`);
+    if (selectedPlayers.length < minPlayers || selectedPlayers.length > maxPlayers) {
+      setError(
+        minPlayers === maxPlayers
+          ? `${FORMAT_LABEL[format]} needs exactly ${maxPlayers} golfers.`
+          : `${FORMAT_LABEL[format]} needs between ${minPlayers} and ${maxPlayers} golfers.`
+      );
       return;
     }
     const allowanceNum = Number(allowance);
@@ -234,11 +250,18 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
                 <li><strong>Blind Wolf</strong> — declares solo before anyone has hit, for higher risk. Wolf gets 3 points for winning outright; anything else gives the other three 1 point each.</li>
               </ul>
             </div>
+            <div>
+              <p className="font-semibold">Stableford</p>
+              <p>1 to 4 golfers, each scored independently against par — no head-to-head comparison. Every hole is
+                worth 2 points at par, +1 for each stroke better, −1 for each stroke worse, down to a minimum of 0
+                (so one disaster hole can&apos;t sink your round). Tracked separately for gross and net (handicap-adjusted)
+                scores, with a running strokes-to-par tally for gross.</p>
+            </div>
           </div>
         )}
 
         <div className="grid grid-cols-1 gap-2">
-          {(["4-2-0", "matchplay", "wolf"] as const).map((f) => (
+          {(["4-2-0", "matchplay", "wolf", "stableford"] as const).map((f) => (
             <button
               key={f}
               type="button"
@@ -250,7 +273,13 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
                 color: format === f ? "var(--color-fairway)" : "var(--color-text)",
               }}
             >
-              {f === "4-2-0" ? "4-2-0 (3 golfers)" : f === "matchplay" ? "Matchplay (2 golfers)" : "Wolf (4 golfers)"}
+              {f === "4-2-0"
+                ? "4-2-0 (3 golfers)"
+                : f === "matchplay"
+                ? "Matchplay (2 golfers)"
+                : f === "wolf"
+                ? "Wolf (4 golfers)"
+                : "Stableford (1–4 golfers)"}
             </button>
           ))}
         </div>
@@ -345,7 +374,7 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
       {/* Players */}
       <div>
         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-muted)" }}>
-          Players ({selectedPlayers.length}/{requiredCount})
+          Players ({selectedPlayers.length}/{maxPlayers}{minPlayers !== maxPlayers ? `, min ${minPlayers}` : ""})
         </label>
         {selectedPlayers.length > 0 && (
           <ul className="space-y-1.5 mb-2">
@@ -365,7 +394,7 @@ export default function RoundSetupForm({ onCreated }: { onCreated: () => void })
             ))}
           </ul>
         )}
-        {selectedPlayers.length < requiredCount && (
+        {selectedPlayers.length < maxPlayers && (
           <>
             <input
               value={playerQuery}

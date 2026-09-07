@@ -9,6 +9,7 @@ import {
   fourTwoZeroHolePoints,
   holeRangeNumbers,
   matchplayRoundPoints,
+  stablefordRoundTotals,
   strokesForRound,
   wolfForHole,
   wolfRoundPoints,
@@ -16,7 +17,7 @@ import {
 
 type RoundRow = {
   id: string;
-  format: "4-2-0" | "matchplay" | "wolf";
+  format: "4-2-0" | "matchplay" | "wolf" | "stableford";
   hole_start: number;
   hole_end: number;
   handicap_allowance: number;
@@ -28,6 +29,7 @@ const FORMAT_LABEL: Record<RoundRow["format"], string> = {
   "4-2-0": "4-2-0",
   matchplay: "Matchplay",
   wolf: "Wolf",
+  stableford: "Stableford",
 };
 
 export default function ActiveRoundCard({
@@ -176,12 +178,24 @@ export default function ActiveRoundCard({
         perHoleGeneric[Number(h)] = { [a]: v.pointsA, [b]: v.pointsB };
       }
       return { totals, perHole: perHoleGeneric };
-    } else {
+    } else if (round.format === "wolf") {
       const { totals, perHole } = wolfRoundPoints(holeNumbers, playerIdsInTeeOrder, wolfDecisions, netByGolfer);
       return { totals, perHole };
+    } else {
+      // Stableford's leaderboard uses stablefordResult below instead — this
+      // branch just keeps the type happy for formats that don't use it.
+      return { totals: {} as Record<string, number>, perHole: {} as Record<number, Record<string, number>> };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [netByGolfer, players, holeNumbers, round?.format, round?.matchplay_cap, wolfDecisions]);
+
+  const stablefordResult = useMemo(() => {
+    if (!round || round.format !== "stableford") return null;
+    const parByHole: Record<number, number> = {};
+    for (const h of holes) parByHole[h.hole_number] = h.par;
+    return stablefordRoundTotals(holeNumbers, playerIdsInTeeOrder, scores, netByGolfer, parByHole);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scores, netByGolfer, holes, holeNumbers, round?.format]);
 
   const requiredCount = players.length;
   const allScored = holeNumbers.every((h) =>
@@ -264,9 +278,12 @@ export default function ActiveRoundCard({
   const hole = holes.find((h) => h.hole_number === currentHole);
   const holeIndex = currentHole ? holeNumbers.indexOf(currentHole) : -1;
 
-  const sortedLeaderboard = [...players].sort(
-    (a, b) => (pointsResult.totals[b.golfer_id] ?? 0) - (pointsResult.totals[a.golfer_id] ?? 0)
-  );
+  const sortedLeaderboard = [...players].sort((a, b) => {
+    if (round.format === "stableford" && stablefordResult) {
+      return (stablefordResult.netPoints[b.golfer_id] ?? 0) - (stablefordResult.netPoints[a.golfer_id] ?? 0);
+    }
+    return (pointsResult.totals[b.golfer_id] ?? 0) - (pointsResult.totals[a.golfer_id] ?? 0);
+  });
 
   const currentWolfId =
     round.format === "wolf" && holeIndex >= 0 ? wolfForHole(playerIdsInTeeOrder, holeIndex) : null;
@@ -308,9 +325,22 @@ export default function ActiveRoundCard({
                 <span className="tabular mr-1.5" style={{ color: "var(--color-text-muted)" }}>{i + 1}.</span>
                 {p.name}
               </span>
-              <span className="font-semibold tabular" style={{ color: "var(--color-fairway)" }}>
-                {pointsResult.totals[p.golfer_id] ?? 0}
-              </span>
+              {round.format === "stableford" && stablefordResult ? (
+                <span className="text-right">
+                  <span className="font-semibold tabular" style={{ color: "var(--color-fairway)" }}>
+                    {stablefordResult.netPoints[p.golfer_id] ?? 0} net
+                  </span>
+                  <span className="block text-xs tabular" style={{ color: "var(--color-text-muted)" }}>
+                    {stablefordResult.grossPoints[p.golfer_id] ?? 0} gross ·{" "}
+                    {(stablefordResult.toPar[p.golfer_id] ?? 0) > 0 ? "+" : ""}
+                    {stablefordResult.toPar[p.golfer_id] ?? 0} to par
+                  </span>
+                </span>
+              ) : (
+                <span className="font-semibold tabular" style={{ color: "var(--color-fairway)" }}>
+                  {pointsResult.totals[p.golfer_id] ?? 0}
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -422,6 +452,10 @@ export default function ActiveRoundCard({
           {players.map((p) => {
             const strokeCount = currentHole ? strokes[p.golfer_id]?.[currentHole] ?? 0 : 0;
             const net = currentHole ? netByGolfer[p.golfer_id]?.[currentHole] : undefined;
+            const holePoints =
+              round.format === "stableford" && currentHole !== null
+                ? stablefordResult?.perHole[currentHole]?.[p.golfer_id]
+                : undefined;
             return (
               <div
                 key={p.golfer_id}
@@ -433,6 +467,7 @@ export default function ActiveRoundCard({
                   <p className="text-xs tabular" style={{ color: "var(--color-text-muted)" }}>
                     {strokeCount > 0 ? `+${strokeCount} stroke${strokeCount > 1 ? "s" : ""}` : "No stroke"}
                     {net !== undefined ? ` · Net ${net}` : ""}
+                    {holePoints !== undefined ? ` · ${holePoints.netPoints} pt${holePoints.netPoints === 1 ? "" : "s"}` : ""}
                   </p>
                 </div>
                 <input

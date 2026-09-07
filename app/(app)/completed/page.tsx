@@ -9,6 +9,7 @@ import {
   fourTwoZeroHolePoints,
   holeRangeNumbers,
   matchplayRoundPoints,
+  stablefordRoundTotals,
   strokesForRound,
   wolfForHole,
   wolfRoundPoints,
@@ -16,7 +17,7 @@ import {
 
 type CompletedRound = {
   id: string;
-  format: "4-2-0" | "matchplay" | "wolf";
+  format: "4-2-0" | "matchplay" | "wolf" | "stableford";
   hole_start: number;
   hole_end: number;
   handicap_allowance: number;
@@ -407,7 +408,7 @@ function CompletedRoundCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scores, holes]);
 
-  const pointsResult = useMemo(() => {
+   const pointsResult = useMemo(() => {
     if (!holes) return { totals: {} as Record<string, number>, perHole: {} as Record<number, Record<string, number>> };
     if (round.format === "4-2-0") {
       const totals: Record<string, number> = {};
@@ -431,19 +432,38 @@ function CompletedRoundCard({
         perHoleGeneric[Number(h)] = { [a]: v.pointsA, [b]: v.pointsB };
       }
       return { totals, perHole: perHoleGeneric };
-    } else {
+    } else if (round.format === "wolf") {
       const playerIdsInTeeOrder = round.players.map((p) => p.golfer_id);
       const { totals, perHole } = wolfRoundPoints(holeNumbers, playerIdsInTeeOrder, wolfDecisions, netByGolfer);
       return { totals, perHole };
+    } else {
+      return { totals: {} as Record<string, number>, perHole: {} as Record<number, Record<string, number>> };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [netByGolfer, holes, wolfDecisions]);
 
-  const sortedTotals = [...round.players].sort(
-    (a, b) => (pointsResult.totals[b.golfer_id] ?? 0) - (pointsResult.totals[a.golfer_id] ?? 0)
-  );
-  const topScore = pointsResult.totals[sortedTotals[0]?.golfer_id];
-  const winners = sortedTotals.filter((p) => pointsResult.totals[p.golfer_id] === topScore);
+  const stablefordResult = useMemo(() => {
+    if (!holes || round.format !== "stableford") return null;
+    const parByHole: Record<number, number> = {};
+    for (const h of holes) parByHole[h.hole_number] = h.par;
+    const playerIds = round.players.map((p) => p.golfer_id);
+    return stablefordRoundTotals(holeNumbers, playerIds, scores, netByGolfer, parByHole);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scores, netByGolfer, holes]);
+
+  const sortedTotals = [...round.players].sort((a, b) => {
+    if (round.format === "stableford" && stablefordResult) {
+      return (stablefordResult.netPoints[b.golfer_id] ?? 0) - (stablefordResult.netPoints[a.golfer_id] ?? 0);
+    }
+    return (pointsResult.totals[b.golfer_id] ?? 0) - (pointsResult.totals[a.golfer_id] ?? 0);
+  });
+  function scoreFor(golferId: string): number {
+    return round.format === "stableford" && stablefordResult
+      ? stablefordResult.netPoints[golferId] ?? 0
+      : pointsResult.totals[golferId] ?? 0;
+  }
+  const topScore = scoreFor(sortedTotals[0]?.golfer_id);
+  const winners = sortedTotals.filter((p) => scoreFor(p.golfer_id) === topScore);
   const resultLabel = winners.length > 1 ? "Tie" : `${winners[0]?.name} wins`;
 
   async function handleDelete() {
@@ -460,7 +480,7 @@ function CompletedRoundCard({
         <div className="flex items-start justify-between">
           <div>
             <p className="text-sm font-medium">
-              {round.course_name} <span style={{ color: "var(--color-text-muted)" }}>· {round.format === "4-2-0" ? "4-2-0" : round.format === "matchplay" ? "Matchplay" : "Wolf"}</span>
+              {round.course_name} <span style={{ color: "var(--color-text-muted)" }}>· {round.format === "4-2-0" ? "4-2-0" : round.format === "matchplay" ? "Matchplay" : round.format === "wolf" ? "Wolf" : "Stableford"}</span>
             </p>
             <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
               {new Date(round.completed_at).toLocaleDateString()} ·{" "}
@@ -476,12 +496,21 @@ function CompletedRoundCard({
             {resultLabel}
           </span>
         </div>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-          {sortedTotals.map((p) => (
-            <span key={p.golfer_id} className="text-xs tabular">
-              {p.name}: <span className="font-semibold">{pointsResult.totals[p.golfer_id] ?? 0}</span>
-            </span>
-          ))}
+         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+          {sortedTotals.map((p) =>
+            round.format === "stableford" && stablefordResult ? (
+              <span key={p.golfer_id} className="text-xs tabular">
+                {p.name}: <span className="font-semibold">{stablefordResult.netPoints[p.golfer_id] ?? 0} net</span> /{" "}
+                {stablefordResult.grossPoints[p.golfer_id] ?? 0} gross (
+                {(stablefordResult.toPar[p.golfer_id] ?? 0) > 0 ? "+" : ""}
+                {stablefordResult.toPar[p.golfer_id] ?? 0})
+              </span>
+            ) : (
+              <span key={p.golfer_id} className="text-xs tabular">
+                {p.name}: <span className="font-semibold">{pointsResult.totals[p.golfer_id] ?? 0}</span>
+              </span>
+            )
+          )}
         </div>
       </button>
 
@@ -490,7 +519,13 @@ function CompletedRoundCard({
           {detailLoading || !holes ? (
             <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>Loading scorecard…</p>
           ) : (
-            <table className="w-full text-xs tabular">
+            <>
+              {round.format === "stableford" && (
+                <p className="text-xs mb-2" style={{ color: "var(--color-text-muted)" }}>
+                  Each cell shows gross score, then (net points / gross points).
+                </p>
+              )}
+              <table className="w-full text-xs tabular">
               <thead>
                 <tr style={{ color: "var(--color-text-muted)" }}>
                   <th className="text-left font-semibold pb-1">Hole</th>
@@ -498,11 +533,28 @@ function CompletedRoundCard({
                   {round.format === "wolf" && (
                     <th className="text-left font-semibold pb-1 pl-2">Wolf</th>
                   )}
-                  {round.players.map((p) => (
-                    <th key={p.golfer_id} className="text-left font-semibold pb-1 pl-2">
-                      {p.name.split(" ")[0]}
-                    </th>
-                  ))}
+                  {round.players.map((p) => {
+                        const gross = scores[p.golfer_id]?.[h.hole_number];
+                        const stablefordPts =
+                          round.format === "stableford"
+                            ? stablefordResult?.perHole[h.hole_number]?.[p.golfer_id]
+                            : undefined;
+                        const simplePts =
+                          round.format !== "stableford" ? pointsResult.perHole[h.hole_number]?.[p.golfer_id] : undefined;
+                        return (
+                          <td key={p.golfer_id} className="py-1 pl-2">
+                            {gross ?? "–"}
+                            {stablefordPts !== undefined ? (
+                              <span style={{ color: "var(--color-text-muted)" }}>
+                                {" "}
+                                ({stablefordPts.netPoints}/{stablefordPts.grossPoints})
+                              </span>
+                            ) : simplePts !== undefined ? (
+                              <span style={{ color: "var(--color-text-muted)" }}> ({simplePts})</span>
+                            ) : null}
+                          </td>
+                        );
+                      })}
                 </tr>
               </thead>
               <tbody>
@@ -545,8 +597,9 @@ function CompletedRoundCard({
                     </tr>
                   );
                 })}
-              </tbody>
+             </tbody>
             </table>
+            </>
           )}
 
           <div className="mt-3 flex justify-end">
