@@ -350,6 +350,7 @@ function CompletedRoundCard({
   const [wolfDecisions, setWolfDecisions] = useState<Record<number, WolfDecision | undefined>>({});
   const [detailLoading, setDetailLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
   const holeNumbers = holeRangeNumbers(round.hole_start, round.hole_end);
@@ -494,19 +495,45 @@ function CompletedRoundCard({
   async function handleExportImage() {
     if (!exportRef.current) return;
     setExporting(true);
+    setExportError(null);
     try {
       const html2canvas = (await import("html2canvas")).default;
       const canvas = await html2canvas(exportRef.current, {
         backgroundColor: "#ffffff",
         scale: 2,
       });
-      const dataUrl = canvas.toDataURL("image/png");
+
+      const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob) throw new Error("Could not create the image.");
+
       const dateStr = new Date(round.completed_at).toISOString().split("T")[0];
       const safeName = round.course_name.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+      const filename = `${safeName}-${dateStr}.png`;
+      const file = new File([blob], filename, { type: "image/png" });
+
+      // iOS Safari (and installed web apps especially) don't reliably support
+      // the classic <a download> trick. The Web Share API opens the native
+      // share sheet instead, which has a direct "Save Image" option.
+      const nav = navigator as Navigator & {
+        canShare?: (data?: ShareData) => boolean;
+        share?: (data: ShareData) => Promise<void>;
+      };
+      if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
+        await nav.share({ files: [file], title: filename });
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.download = `${safeName}-${dateStr}.png`;
-      link.href = dataUrl;
+      link.download = filename;
+      link.href = url;
       link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      // AbortError just means the user closed the share sheet — not a real error.
+      if ((err as Error)?.name !== "AbortError") {
+        setExportError("Couldn't export the image. Try taking a screenshot instead.");
+      }
     } finally {
       setExporting(false);
     }
@@ -717,6 +744,11 @@ function CompletedRoundCard({
               </button>
             )}
           </div>
+          {exportError && (
+            <p className="mt-2 text-xs rounded-lg px-3 py-2" style={{ background: "var(--color-flag-soft)", color: "var(--color-flag)" }}>
+              {exportError}
+            </p>
+          )}
         </div>
       )}
     </li>
