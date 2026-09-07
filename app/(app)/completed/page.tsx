@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   CourseHole,
@@ -349,6 +349,8 @@ function CompletedRoundCard({
   const [scores, setScores] = useState<Record<string, Record<number, number>>>({});
   const [wolfDecisions, setWolfDecisions] = useState<Record<number, WolfDecision | undefined>>({});
   const [detailLoading, setDetailLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   const holeNumbers = holeRangeNumbers(round.hole_start, round.hole_end);
 
@@ -489,6 +491,27 @@ function CompletedRoundCard({
   const winners = sortedTotals.filter((p) => scoreFor(p.golfer_id) === topScore);
   const resultLabel = winners.length > 1 ? "Tie" : `${winners[0]?.name} wins`;
 
+  async function handleExportImage() {
+    if (!exportRef.current) return;
+    setExporting(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const canvas = await html2canvas(exportRef.current, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+      });
+      const dataUrl = canvas.toDataURL("image/png");
+      const dateStr = new Date(round.completed_at).toISOString().split("T")[0];
+      const safeName = round.course_name.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+      const link = document.createElement("a");
+      link.download = `${safeName}-${dateStr}.png`;
+      link.href = dataUrl;
+      link.click();
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function handleDelete() {
     await supabase.from("rounds").delete().eq("id", round.id);
     onDeleted();
@@ -538,11 +561,46 @@ function CompletedRoundCard({
       </button>
 
       {expanded && (
-        <div className="mt-3 pt-3 border-t overflow-x-auto" style={{ borderColor: "var(--color-border)" }}>
+        <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--color-border)" }}>
           {detailLoading || !holes ? (
             <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>Loading scorecard…</p>
           ) : (
-            <>
+            <div ref={exportRef} style={{ background: "white", padding: 12 }} className="overflow-x-auto">
+              <div className="mb-2">
+                <p className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>
+                  {round.course_name} ·{" "}
+                  {round.format === "4-2-0" ? "4-2-0" : round.format === "matchplay" ? "Matchplay" : round.format === "wolf" ? "Wolf" : "Stableford"}
+                </p>
+                <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                  {new Date(round.completed_at).toLocaleDateString()} ·{" "}
+                  {round.hole_start === 1 && round.hole_end === 18
+                    ? "Full 18"
+                    : round.hole_start === 1
+                    ? "Front 9"
+                    : "Back 9"}{" "}
+                  · Hcp {round.handicap_allowance}%{round.matchplay_cap ? ` · Cap ${round.matchplay_cap}` : ""}
+                  {" · "}
+                  <span style={{ color: "var(--color-fairway)", fontWeight: 600 }}>{resultLabel}</span>
+                </p>
+              </div>
+
+              <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1">
+                {sortedTotals.map((p) =>
+                  round.format === "stableford" && stablefordResult ? (
+                    <span key={p.golfer_id} className="text-xs tabular">
+                      {p.name} (
+                      {formatToPar(stablefordResult.toPar[p.golfer_id] ?? 0)}/
+                      {stablefordResult.netPoints[p.golfer_id] ?? 0}/
+                      {stablefordResult.grossPoints[p.golfer_id] ?? 0})
+                    </span>
+                  ) : (
+                    <span key={p.golfer_id} className="text-xs tabular">
+                      {p.name}: <span className="font-semibold">{pointsResult.totals[p.golfer_id] ?? 0}</span>
+                    </span>
+                  )
+                )}
+              </div>
+
               {round.format === "stableford" && (
                 <p className="text-xs mb-2" style={{ color: "var(--color-text-muted)" }}>
                   Each cell shows gross score, then (strokes to par / net points / gross points).
@@ -632,10 +690,18 @@ function CompletedRoundCard({
                   </tfoot>
                 )}
               </table>
-            </>
+            </div>
           )}
 
-          <div className="mt-3 flex justify-end">
+          <div className="mt-3 flex items-center justify-between">
+            <button
+              onClick={handleExportImage}
+              disabled={exporting || detailLoading || !holes}
+              className="text-xs font-medium disabled:opacity-50"
+              style={{ color: "var(--color-fairway)" }}
+            >
+              {exporting ? "Exporting…" : "Export as image"}
+            </button>
             {deleteConfirming ? (
               <div className="flex items-center gap-2">
                 <button onClick={handleDelete} className="text-xs font-medium" style={{ color: "var(--color-flag)" }}>
