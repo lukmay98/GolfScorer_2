@@ -8,3 +8,4 @@ export * from "./four-two-zero";
 export * from "./matchplay";
 export * from "./wolf";
 export * from "./stableford";
+export * from "./totals";

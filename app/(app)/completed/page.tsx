@@ -7,6 +7,7 @@ import {
   RoundPlayerInfo,
   WolfDecision,
   fourTwoZeroHolePoints,
+  grossStrokeTotals,
   holeRangeNumbers,
   matchplayRoundPoints,
   stablefordRoundTotals,
@@ -477,6 +478,19 @@ function CompletedRoundCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scores, netByGolferAbsolute, holes]);
 
+  // Summe der Brutto-Schläge und ± Par – für alle Spielformate
+  const strokeTotals = useMemo(() => {
+    const parByHole: Record<number, number> = {};
+    for (const h of holes ?? []) parByHole[h.hole_number] = h.par;
+    return grossStrokeTotals(
+      holeNumbers,
+      round.players.map((p) => p.golfer_id),
+      scores,
+      parByHole
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scores, holes]);
+
   const sortedTotals = [...round.players].sort((a, b) => {
     if (round.format === "stableford" && stablefordResult) {
       return (stablefordResult.netPoints[b.golfer_id] ?? 0) - (stablefordResult.netPoints[a.golfer_id] ?? 0);
@@ -618,11 +632,13 @@ function CompletedRoundCard({
                       {p.name} (
                       {formatToPar(stablefordResult.toPar[p.golfer_id] ?? 0)}/
                       {stablefordResult.netPoints[p.golfer_id] ?? 0}/
-                      {stablefordResult.grossPoints[p.golfer_id] ?? 0})
+                      {stablefordResult.grossPoints[p.golfer_id] ?? 0}
+                      {" · "}{strokeTotals.strokes[p.golfer_id] ?? 0} strokes)
                     </span>
                   ) : (
                     <span key={p.golfer_id} className="text-xs tabular">
                       {p.name}: <span className="font-semibold">{pointsResult.totals[p.golfer_id] ?? 0}</span>
+                      {" "}({strokeTotals.strokes[p.golfer_id] ?? 0} / {formatToPar(strokeTotals.toPar[p.golfer_id] ?? 0)})
                     </span>
                   )
                 )}
@@ -700,22 +716,31 @@ function CompletedRoundCard({
                     );
                   })}
                 </tbody>
-                {round.format === "stableford" && stablefordResult && (
-                  <tfoot>
-                    <tr className="border-t-2 font-semibold" style={{ borderColor: "var(--color-border)" }}>
-                      <td className="py-1.5" colSpan={2}>
-                        Total
-                      </td>
-                      {round.players.map((p) => (
+                <tfoot>
+                  <tr className="border-t-2 font-semibold" style={{ borderColor: "var(--color-border)" }}>
+                    <td className="py-1.5" colSpan={round.format === "wolf" ? 3 : 2}>
+                      Total
+                    </td>
+                    {round.players.map((p) => {
+                      const st = strokeTotals.strokes[p.golfer_id] ?? 0;
+                      const tp = strokeTotals.toPar[p.golfer_id] ?? 0;
+                      return (
                         <td key={p.golfer_id} className="py-1.5 pl-2">
-                          {formatToPar(stablefordResult.toPar[p.golfer_id] ?? 0)}/
-                          {stablefordResult.netPoints[p.golfer_id] ?? 0}/
-                          {stablefordResult.grossPoints[p.golfer_id] ?? 0}
+                          {st} ({formatToPar(tp)})
+                          {round.format === "stableford" && stablefordResult ? (
+                            <span className="block font-normal" style={{ color: "var(--color-text-muted)" }}>
+                              {stablefordResult.netPoints[p.golfer_id] ?? 0} net · {stablefordResult.grossPoints[p.golfer_id] ?? 0} gross
+                            </span>
+                          ) : (
+                            <span className="block font-normal" style={{ color: "var(--color-text-muted)" }}>
+                              {pointsResult.totals[p.golfer_id] ?? 0} pts
+                            </span>
+                          )}
                         </td>
-                      ))}
-                    </tr>
-                  </tfoot>
-                )}
+                      );
+                    })}
+                  </tr>
+                </tfoot>
               </table>
             </div>
           )}

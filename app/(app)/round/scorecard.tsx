@@ -7,6 +7,7 @@ import {
   RoundPlayerInfo,
   WolfDecision,
   fourTwoZeroHolePoints,
+  grossStrokeTotals,
   holeRangeNumbers,
   matchplayRoundPoints,
   stablefordRoundTotals,
@@ -221,6 +222,14 @@ export default function ActiveRoundCard({
     return stablefordRoundTotals(holeNumbers, playerIdsInTeeOrder, scores, netByGolferAbsolute, parByHole);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scores, netByGolferAbsolute, holes, holeNumbers, round?.format]);
+
+  // Summe der Brutto-Schläge und ± Par – für alle Spielformate
+  const strokeTotals = useMemo(() => {
+    const parByHole: Record<number, number> = {};
+    for (const h of holes) parByHole[h.hole_number] = h.par;
+    return grossStrokeTotals(holeNumbers, playerIdsInTeeOrder, scores, parByHole);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scores, holes, holeNumbers]);
 
   const requiredCount = players.length;
   const allScored = holeNumbers.every((h) =>
@@ -600,22 +609,31 @@ export default function ActiveRoundCard({
               );
             })}
           </tbody>
-          {round.format === "stableford" && stablefordResult && (
-            <tfoot>
-              <tr className="border-t-2 font-semibold" style={{ borderColor: "var(--color-border)" }}>
-                <td className="py-1.5" colSpan={2}>
-                  Total
-                </td>
-                {players.map((p) => (
+          <tfoot>
+            <tr className="border-t-2 font-semibold" style={{ borderColor: "var(--color-border)" }}>
+              <td className="py-1.5" colSpan={round.format === "wolf" ? 3 : 2}>
+                Total
+              </td>
+              {players.map((p) => {
+                const st = strokeTotals.strokes[p.golfer_id] ?? 0;
+                const tp = strokeTotals.toPar[p.golfer_id] ?? 0;
+                return (
                   <td key={p.golfer_id} className="py-1.5 pl-2">
-                    {formatToPar(stablefordResult.toPar[p.golfer_id] ?? 0)}/
-                    {stablefordResult.netPoints[p.golfer_id] ?? 0}/
-                    {stablefordResult.grossPoints[p.golfer_id] ?? 0}
+                    {st} ({formatToPar(tp)})
+                    {round.format === "stableford" && stablefordResult ? (
+                      <span className="block font-normal" style={{ color: "var(--color-text-muted)" }}>
+                        {stablefordResult.netPoints[p.golfer_id] ?? 0} net · {stablefordResult.grossPoints[p.golfer_id] ?? 0} gross
+                      </span>
+                    ) : (
+                      <span className="block font-normal" style={{ color: "var(--color-text-muted)" }}>
+                        {pointsResult.totals[p.golfer_id] ?? 0} pts
+                      </span>
+                    )}
                   </td>
-                ))}
-              </tr>
-            </tfoot>
-          )}
+                );
+              })}
+            </tr>
+          </tfoot>
         </table>
       </div>
 
